@@ -1,0 +1,201 @@
+﻿// mock_redis.h : Include file for standard system include files,
+// or project specific include files.
+
+#pragma once
+
+#include <iostream>
+
+// TODO: Reference additional headers your program requires here.
+redisReply* createRedisReply();
+
+// Alias for unique_ptr with custom deleter
+using RedisReplyPtr = std::unique_ptr<redisReply, decltype(&freeReplyObject)>;
+
+redisReply* createStatusReply(const char* status);
+redisReply* createOkStatusReply();
+redisReply* createErrorReply(const char* error);
+redisReply* createAuthErrorReply();
+redisReply* createNilReply();
+redisReply* createStringReply(const std::string& s);
+redisReply* createIntegerReply(int value);
+redisReply* createArrayReply(size_t count);
+
+struct MyRedisReply
+{
+    int type;                          /* REDIS_REPLY_* */
+    long long integer;                 /* The integer when type is REDIS_REPLY_INTEGER */
+    double dval;                       /* The double when type is REDIS_REPLY_DOUBLE */
+    size_t len;                        /* Length of string */
+    std::string str;                   /* Used for REDIS_REPLY_ERROR, REDIS_REPLY_STRING
+                                          REDIS_REPLY_VERB, REDIS_REPLY_DOUBLE (in additional to dval),
+                                          and REDIS_REPLY_BIGNUM. */
+    std::string vtype;                 /* Used for REDIS_REPLY_VERB, contains the null
+                                          terminated 3 character content type, such as "txt". */
+    size_t elements;                   /* number of elements, for REDIS_REPLY_ARRAY */
+    std::vector<MyRedisReply> element; /* elements vector for REDIS_REPLY_ARRAY */
+};
+
+struct RedisReplyDeleter
+{
+    void operator()(redisReply* r) const
+    {
+        if (r)
+        {
+            freeReplyObject(r);
+        }
+    }
+};
+
+template <typename T>
+concept ValidRedisReplyType =
+    std::is_same_v<T, redisReply*> || std::is_same_v<T, RedisReplyPtr> || std::is_same_v<T, MyRedisReply>;
+
+template <ValidRedisReplyType T> T getStatusReply(const char* status)
+{
+    if constexpr (std::is_same_v<T, MyRedisReply>)
+    {
+        return MyRedisReply{
+            .type = REDIS_REPLY_STATUS,
+            .len = strlen(status),
+            .str = std::string(status),
+        };
+    }
+    else
+    {
+        redisReply* r = createRedisReply();
+        r->type = REDIS_REPLY_STATUS;
+        r->str = _strdup(status);
+        r->len = strlen(status);
+
+        if constexpr (std::is_same_v<T, redisReply*>)
+        {
+            return r;
+        }
+        else if constexpr (std::is_same_v<T, RedisReplyPtr>)
+        {
+            return RedisReplyPtr(r);
+        }
+    }
+}
+
+template <ValidRedisReplyType T> T getOkStatusReply()
+{
+    return getStatusReply<T>("OK");
+}
+
+template <ValidRedisReplyType T> T getErrorReply(const char* error)
+{
+    if constexpr (std::is_same_v<T, MyRedisReply>)
+    {
+        return MyRedisReply{
+            .type = REDIS_REPLY_ERROR,
+            .len = strlen(error),
+            .str = std::string(error),
+        };
+    }
+    else
+    {
+        redisReply* r = createRedisReply();
+        r->type = REDIS_REPLY_ERROR;
+        r->str = _strdup(error);
+        r->len = strlen(error);
+
+        if constexpr (std::is_same_v<T, redisReply*>)
+            return r;
+        else
+            return RedisReplyPtr(r);
+    }
+}
+
+template <ValidRedisReplyType T> T getAuthErrorReply()
+{
+    return getErrorReply<T>("-NOAUTH Authentication required");
+}
+
+template <ValidRedisReplyType T> T getNilReply()
+{
+    if constexpr (std::is_same_v<T, MyRedisReply>)
+    {
+        return MyRedisReply{.type = REDIS_REPLY_NIL};
+    }
+    else
+    {
+        redisReply* r = createRedisReply();
+        r->type = REDIS_REPLY_NIL;
+
+        if constexpr (std::is_same_v<T, redisReply*>)
+            return r;
+        else
+            return RedisReplyPtr(r);
+    }
+}
+
+template <ValidRedisReplyType T> T getStringReply(const std::string& s)
+{
+    if constexpr (std::is_same_v<T, MyRedisReply>)
+    {
+        return MyRedisReply{
+            .type = REDIS_REPLY_STRING,
+            .len = s.size(),
+            .str = s,
+        };
+    }
+    else
+    {
+        redisReply* r = createRedisReply();
+        r->type = REDIS_REPLY_STRING;
+        r->str = _strdup(s.c_str());
+        r->len = s.size();
+
+        if constexpr (std::is_same_v<T, redisReply*>)
+            return r;
+        else
+            return RedisReplyPtr(r);
+    }
+}
+
+template <ValidRedisReplyType T> T getIntegerReply(int value)
+{
+    if constexpr (std::is_same_v<T, MyRedisReply>)
+    {
+        return MyRedisReply{
+            .type = REDIS_REPLY_INTEGER,
+            .integer = value,
+        };
+    }
+    else
+    {
+        redisReply* r = createRedisReply();
+        r->type = REDIS_REPLY_INTEGER;
+        r->integer = value;
+
+        if constexpr (std::is_same_v<T, redisReply*>)
+            return r;
+        else
+            return RedisReplyPtr(r);
+    }
+}
+
+template <ValidRedisReplyType T> T getArrayReply(size_t count)
+{
+    if constexpr (std::is_same_v<T, MyRedisReply>)
+    {
+        return MyRedisReply{
+            .type = REDIS_REPLY_ARRAY,
+            .elements = count,
+            .element = std::vector<MyRedisReply>(count),
+        };
+    }
+    else
+    {
+        redisReply* r = createRedisReply();
+        r->type = REDIS_REPLY_ARRAY;
+        r->elements = count;
+        r->element = (redisReply**)calloc(count, sizeof(redisReply*));
+
+        if constexpr (std::is_same_v<T, redisReply*>)
+            return r;
+        else
+            return RedisReplyPtr(r);
+    }
+}

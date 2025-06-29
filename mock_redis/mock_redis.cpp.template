@@ -14,8 +14,6 @@
 
 #include "hiredis.h"
 
-#include "mock_redis.h"
-
 // -------------------
 // In-memory store & auth
 // -------------------
@@ -24,11 +22,146 @@ static std::unordered_map<std::string, std::unordered_set<std::string>> setDb;
 
 static bool isAuth = false;
 
+// -------------------
+// Types and Enums
+// -------------------
 
-#include "mock_redis_hash.h"
-#include "mock_redis_misc.h"
-#include "mock_redis_set.h"
-#include "mock_redis_string.h"
+enum class ArgType
+{
+    String,
+    Int
+};
+using ArgValue = std::variant<std::string, int>;
+
+static std::string argTypeName(ArgType t)
+{
+    return (t == ArgType::String) ? "string" : "int";
+}
+
+template <typename Tag> struct Command;
+
+// Result can be nothing, a single string, or a list of strings
+using CommandResult = redisReply*; // Now we are returning redisReply directly
+
+// -------------------
+// CommandInfo and command table
+// -------------------
+
+using HandlerFunc = std::function<redisReply*(va_list)>;
+
+struct CommandInfo
+{
+    std::vector<ArgType> argTypes;
+    HandlerFunc handler;
+};
+
+// Global command registry singleton
+/*
+struct CommandRegistry
+{
+    // Returns the singleton command registry map
+    static std::unordered_map<std::string, CommandInfo>& get()
+    {
+        static std::unordered_map<std::string, CommandInfo> instance;
+        return instance;
+    }
+};
+*/
+
+struct CommandRegistry
+{
+    static CommandRegistry& getInstance()
+    {
+        static CommandRegistry instance;
+        return instance;
+    }
+
+    // The command registry map: key=command format string, value=handler function pointer
+    std::unordered_map<std::string, std::function<redisReply*(va_list)>> commands;
+
+    void registerCommand(const std::string& format, std::function<redisReply*(va_list)> handler)
+    {
+        commands[format] = handler;
+    }
+    
+    static RegistryMap& get()
+    {
+        static RegistryMap instance;
+        return instance;
+    }
+
+    std::function<redisReply*(va_list)> getCommandHandler(const std::string& format) { return commands.at(format); }
+};
+
+
+
+
+
+// CommandRegistrar helper template
+template <typename Tag> struct CommandRegistrar
+{
+    CommandRegistrar()
+    {
+        // Register the command into the global registry by format string
+        CommandRegistry::get()[Tag::format] = makeCommandEntry<Tag>();
+    }
+};
+
+// Helper concept: checks if Tag::call returns redisReply*
+template <typename Tag>
+concept ReturnsRedisReplyPtr = requires {
+    typename Tag::ArgTypes;
+    requires std::same_as<decltype(std::apply(Tag::call, std::declval<typename Tag::ArgTypes>())), redisReply*>;
+};
+
+
+template <typename Command> struct AutoRegister
+{
+    AutoRegister()
+    {
+        // Example: Register command using Command::format and Command::call
+        CommandRegistry::getInstance().registerCommand(Command::format, &Command::call);
+    }
+};
+
+//template <typename Tag> struct AutoRegister
+//{
+//    // Only instantiate registrar if call returns redisReply*
+//    static inline std::conditional_t<ReturnsRedisReplyPtr<Tag>, CommandRegistrar<Tag>, std::monostate> registrar{};
+//};
+
+/*
+template <typename Tag> struct AutoRegister
+{
+    AutoRegister()
+    {
+        ensureRegistered(); // call registration logic
+    }
+
+    static void ensureRegistered()
+    {
+        if constexpr (ReturnsRedisReplyPtr<Tag>)
+        {
+            // Will trigger CommandRegistrar construction once per type
+            static CommandRegistrar<Tag> registrar{};
+            (void)registrar; // avoid unused warnings
+        }
+    }
+
+    // 👇 This line forces the constructor to run during template instantiation
+    inline static const AutoRegister<Tag> trigger{};
+};
+*/
+
+//#include "mock_redis_hash.h"
+//#include "mock_redis_misc.h"
+//#include "mock_redis_set.h"
+//#include "mock_redis_string.h"
+
+#include "mock_redis_string_template.h"
+
+
+
 
 // -------------------
 // Parse va_list according to ArgTypes
@@ -324,17 +457,7 @@ int test()
 auto createRedisReply() -> redisReply*
 {
     redisReply* reply = (redisReply*)calloc(1, sizeof(redisReply));
-    std::cerr << "create " << reply << "\n";
     return reply;
-}
-
-// Modified create function returning unique_ptr
-auto createRedisReplyPtr() -> RedisReplyPtr
-{
-    redisReply* rawReply = (redisReply*)calloc(1, sizeof(redisReply));
-    std::cerr << "create " << rawReply << "\n";
-
-    return RedisReplyPtr(rawReply, &freeReplyObject);
 }
 
 redisReply* createStatusReply(const char* status)
@@ -390,7 +513,7 @@ redisReply* createIntegerReply(int value)
 }
 redisReply* createArrayReply(size_t count)
 {
-    redisReply* reply = (redisReply*)calloc(1, sizeof(redisReply));
+    redisReply* reply = createRedisReply();
     reply->type = REDIS_REPLY_ARRAY;
     reply->elements = static_cast<size_t>(count);
     reply->element = (redisReply**)calloc(count, sizeof(redisReply*));
