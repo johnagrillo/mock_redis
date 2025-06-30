@@ -10,6 +10,7 @@ mock_redis_misc.cpp
 mock_redis_hash.cpp
 mock_redis_string.cpp
 mock_redis_set.cpp
+mock_redis_list.cpp
 
 hiredis.cpp
 

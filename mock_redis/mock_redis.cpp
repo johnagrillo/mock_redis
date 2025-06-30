@@ -28,12 +28,13 @@ bool isAuth = false;
 // -------------------
 
 // NOLINTBEGIN
+
 std::vector<ArgValue> parseVaList(va_list ap, const std::vector<ArgType>& argTypes)
 {
     std::vector<ArgValue> result;
-    for (ArgType t : argTypes)
+    for (ArgType type : argTypes)
     {
-        switch (t)
+        switch (type)
         {
         case ArgType::String:
         {
@@ -47,18 +48,19 @@ std::vector<ArgValue> parseVaList(va_list ap, const std::vector<ArgType>& argTyp
             result.emplace_back(i);
             break;
         }
-        default: throw std::runtime_error("Unknown ArgType");
+        case ArgType::Binary:
+        {
+            const char* ptr = va_arg(ap, const char*);
+            int len = va_arg(ap, int); // get the binary length
+            result.emplace_back(BinaryValue(ptr, len));
+            break;
+        }
         }
     }
     return result;
 }
+
 // NOLINTEND
-//  Utility: overloaded lambda for std::visit
-template <class... Ts> struct overloaded : Ts...
-{
-    using Ts::operator()...;
-};
-template <class... Ts> overloaded(Ts...) -> overloaded<Ts...>;
 
 void printResult(redisReply* reply)
 {
@@ -92,41 +94,41 @@ void printResult(redisReply* reply)
 // Command dispatcher
 // -------------------
 
-static auto redisCommand(const std::string name, ...) -> redisReply*
+auto redisCommandFromVaList(const std::string name, va_list ap) -> redisReply*
 {
-
-    auto registry = CommandRegistry::get();
+    auto& registry = CommandRegistry::get();
     if (!registry.contains(name))
     {
         std::cout << "-ERR unknown command '" << name << "'\n";
-        return nullptr; // Return nullptr if the command is not found
+        return nullptr;
     }
 
-    auto it = registry.at(name);
+    auto& cmdInfo = registry.at(name);
 
-    va_list ap;
-    va_start(ap, name);
-
-    // Make a copy of va_list for printing arguments (optional)
-    va_list ap_copy;
-    va_copy(ap_copy, ap);
+    // Debugging the arguments passed to the command
     std::cout << name << " ";
-    // Print command name and args
-    for (ArgType const t : it.argTypes)
+    for (ArgType const t : cmdInfo.argTypes)
     {
         std::cout << " ";
         switch (t)
         {
         case ArgType::String:
         {
-            const char* s = va_arg(ap_copy, const char*);
+            const char* s = va_arg(ap, const char*);
             std::cout << "'" << s << "'";
             break;
         }
         case ArgType::Int:
         {
-            int const i = va_arg(ap_copy, int);
+            int i = va_arg(ap, int);
             std::cout << i;
+            break;
+        }
+        case ArgType::Binary:
+        {
+            const void* data = va_arg(ap, const void*);
+            size_t length = va_arg(ap, size_t); // Assuming length is passed after the binary data
+            std::cout << "[binary data, length: " << length << "]";
             break;
         }
         default: std::cout << "?";
@@ -134,10 +136,18 @@ static auto redisCommand(const std::string name, ...) -> redisReply*
     }
     std::cout << "\n";
 
-    // Call the handler and return the result
-    redisReply* result = it.handler(ap);
+    // Call the command's handler function with the original va_list
+    redisReply* result = cmdInfo.handler(ap);
+    return result;
+}
+
+static auto redisCommand(const std::string name, ...) -> redisReply*
+{
+    va_list ap;
+    va_start(ap, name);
+    redisReply* result = redisCommandFromVaList(name, ap);
     va_end(ap);
-    return result; // Return the redisReply pointer
+    return result;
 }
 
 // -------------------
@@ -158,26 +168,6 @@ static auto Get(const std::string& key)
 }
 
 auto main() -> int
-{
-
-    auto& registry = CommandRegistry::get();
-
-    std::cout << "Registered commands:\n";
-
-    for (const auto& [format, info] : registry)
-    {
-        std::cout << format << "\n";
-    }
-
-    redisCommand("AUTH %s", "hunter2");
-    Set("key", "value");
-    Get("key");
-    Get("none");
-
-    return 0;
-}
-
-static auto test() -> int
 {
 
     // Sample set up for SMEMBERS
@@ -212,6 +202,20 @@ static auto test() -> int
     redisCommand("SREM %s %s", "myset", "two");      // :1 (removed)
     redisCommand("SREM %s %s", "myset", "notfound"); // :0 (not present)
     redisCommand("SMEMBERS %s", "myset");            // one, three, four
+
+    auto& registry = CommandRegistry::get();
+
+    std::cout << "Registered commands:\n";
+
+    for (const auto& [format, info] : registry)
+    {
+        std::cout << format << "\n";
+    }
+
+    redisCommand("AUTH %s", "hunter2");
+    Set("key", "value");
+    Get("key");
+    Get("none");
 
     return 0;
 }

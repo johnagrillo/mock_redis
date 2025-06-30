@@ -21,12 +21,21 @@ extern bool isAuth;
 // Types and Enums
 // -------------------
 
+struct BinaryValue
+{
+    std::string data;
+
+    BinaryValue(const char* ptr, size_t len) : data(ptr, len) {}
+};
 enum class ArgType
 {
     String,
-    Int
+    Int,
+    Binary,
 };
-using ArgValue = std::variant<std::string, int>;
+using ArgValue = std::variant<std::string, int, BinaryValue>;
+
+
 
 static std::string argTypeName(ArgType t)
 {
@@ -141,22 +150,18 @@ void printResult(redisReply* reply);
  * --- Code ---
  */
 
-// Deduce ArgType for a C++ type
 template <typename T> static constexpr auto deduceArgType() -> ArgType
 {
     if constexpr (std::is_same_v<T, std::string>)
-    {
         return ArgType::String;
-    }
     else if constexpr (std::is_same_v<T, int>)
-    {
         return ArgType::Int;
-    }
+    else if constexpr (std::is_same_v<T, BinaryValue>)
+        return ArgType::Binary;
     else
-    {
         static_assert(sizeof(T) == 0, "Unsupported ArgType");
-    }
 }
+
 
 // Turn a tuple type into a vector<ArgType>
 template <typename Tuple> static auto getArgTypes() -> std::vector<ArgType>

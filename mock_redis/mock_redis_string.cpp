@@ -9,6 +9,46 @@ bool isExpired(const std::chrono::time_point<std::chrono::system_clock>& expiryT
     return std::chrono::system_clock::now() > expiryTime;
 }
 
+struct SetBinaryCmd : AutoRegister<SetBinaryCmd>
+{
+    static constexpr const char* tag = "SETB";                      // distinguish from regular SET
+    static constexpr const char* format = "SET %s %b";              // format string
+    using ArgTypes = std::tuple<std::string, BinaryValue>;          // tuple of expected argument types
+
+    static CommandResult call(const std::string& key, const BinaryValue& binVal)
+    {
+        if (!isAuth)
+        {
+            return createAuthErrorReply();
+        }
+
+        strDb[key] = {binVal.data, std::chrono::time_point<std::chrono::system_clock>::max()};
+
+        return createOkStatusReply();
+    }
+};
+
+
+struct SetExBinaryCmd : AutoRegister<SetExBinaryCmd>
+{
+    static constexpr const char* tag = "SETEXB";
+    static constexpr const char* format = "SETEX %s %d %b"; // key, seconds, binary
+    using ArgTypes = std::tuple<std::string, int, BinaryValue>;
+
+    static CommandResult call(const std::string& key, int seconds, const BinaryValue& binVal)
+    {
+        if (!isAuth)
+        {
+            return createAuthErrorReply();
+        }
+
+        auto expiry = std::chrono::system_clock::now() + std::chrono::seconds(seconds);
+        strDb[key] = {binVal.data, expiry};
+
+        return createOkStatusReply();
+    }
+};
+
 // -------------------
 // Exists Command
 // -------------------
