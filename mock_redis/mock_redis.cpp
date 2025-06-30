@@ -17,6 +17,28 @@
 
 #include "hiredis.h"
 
+// Function to return the string representation of a Redis reply type
+std::string getRedisReplyType(int replyType)
+{
+    switch (replyType)
+    {
+    case REDIS_REPLY_STRING: return "REDIS_REPLY_STRING";
+    case REDIS_REPLY_ARRAY: return "REDIS_REPLY_ARRAY";
+    case REDIS_REPLY_INTEGER: return "REDIS_REPLY_INTEGER";
+    case REDIS_REPLY_NIL: return "REDIS_REPLY_NIL";
+    case REDIS_REPLY_STATUS: return "REDIS_REPLY_STATUS";
+    case REDIS_REPLY_ERROR: return "REDIS_REPLY_ERROR";
+    case REDIS_REPLY_DOUBLE: return "REDIS_REPLY_DOUBLE";
+    case REDIS_REPLY_BOOL: return "REDIS_REPLY_BOOL";
+    case REDIS_REPLY_MAP: return "REDIS_REPLY_MAP";
+    case REDIS_REPLY_SET: return "REDIS_REPLY_SET";
+    case REDIS_REPLY_PUSH: return "REDIS_REPLY_PUSH";
+    case REDIS_REPLY_BIGNUM: return "REDIS_REPLY_BIGNUM";
+    case REDIS_REPLY_VERB: return "REDIS_REPLY_VERB";
+    default: return "Unknown Redis reply type";
+    }
+}
+
 // -------------------
 // In-memory store & auth
 // -------------------
