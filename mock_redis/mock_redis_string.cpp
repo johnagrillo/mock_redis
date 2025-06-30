@@ -1,5 +1,3 @@
-#pragma once
-
 #include "mock_redis.h"
 
 static std::unordered_map<std::string, std::pair<std::string, std::chrono::time_point<std::chrono::system_clock>>>

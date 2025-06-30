@@ -1,12 +1,13 @@
 ﻿// mock_redis.cpp : Defines the entry point for the application.
 //
+#include "mock_redis.h"
+
 #include <cstdarg>
 #include <cstddef>
 #include <cstdlib>
 #include <cstring>
 #include <functional>
 #include <iostream>
-#include <string.h>
 #include <string>
 #include <tuple>
 #include <unordered_map>
@@ -16,21 +17,17 @@
 
 #include "hiredis.h"
 
-#include "mock_redis.h"
-
 // -------------------
 // In-memory store & auth
 // -------------------
 
-
 bool isAuth = false;
-
 
 // -------------------
 // Parse va_list according to ArgTypes
 // -------------------
 
-//NOLINTBEGIN
+// NOLINTBEGIN
 std::vector<ArgValue> parseVaList(va_list ap, const std::vector<ArgType>& argTypes)
 {
     std::vector<ArgValue> result;
@@ -55,8 +52,8 @@ std::vector<ArgValue> parseVaList(va_list ap, const std::vector<ArgType>& argTyp
     }
     return result;
 }
-//NOLINTEND
-// Utility: overloaded lambda for std::visit
+// NOLINTEND
+//  Utility: overloaded lambda for std::visit
 template <class... Ts> struct overloaded : Ts...
 {
     using Ts::operator()...;
@@ -184,7 +181,7 @@ static auto test() -> int
 {
 
     // Sample set up for SMEMBERS
-    //setDb["myset"] = {"one", "two", "three"};
+    // setDb["myset"] = {"one", "two", "three"};
 
     // Using the formatted command dispatcher
     auto* r = redisCommand("AUTH %s", "hunter2"); // AUTH hunter2 -> +OK

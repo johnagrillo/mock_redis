@@ -1,6 +1,4 @@
 
-#pragma once
-
 #include "mock_redis.h"
 
 static std::unordered_map<std::string, std::unordered_set<std::string>> setDb;

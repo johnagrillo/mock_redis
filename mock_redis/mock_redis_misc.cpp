@@ -1,4 +1,3 @@
-#pragma once
 
 #include "mock_redis.h"
 
