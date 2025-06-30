@@ -16,7 +16,7 @@
 #include <vector>
 
 #include "hiredis.h"
-
+extern bool isAuth;
 // -------------------
 // Types and Enums
 // -------------------
@@ -91,3 +91,113 @@ redisReply* createNilReply();
 redisReply* createStringReply(const std::string& s);
 redisReply* createIntegerReply(int value);
 redisReply* createArrayReply(size_t count);
+
+std::vector<ArgValue> parseVaList(va_list ap, const std::vector<ArgType>& argTypes);
+void printResult(redisReply* reply);
+
+
+/*
+ * Command Framework for Mock Redis
+ * --------------------------------
+ *
+ * This framework provides a way to define Redis-like commands in C++ using
+ * strong typing and variadic argument parsing.
+ *
+ * Each command is represented by a "Tag" struct that defines:
+ *   - A constexpr `format` string showing the command syntax (for debugging/logging).
+ *   - A tuple type `ArgTypes` listing the expected argument types.
+ *   - A static `call` method implementing the command's logic.
+ *
+ * The framework automatically:
+ *   - Deduces argument types (strings or ints) from the Tag's ArgTypes tuple.
+ *   - Parses variadic C-style arguments (`va_list`) to typed C++ arguments.
+ *   - Calls the Tag's `call` method with typed arguments.
+ *   - Wraps and returns the Redis reply (`redisReply*`).
+ *
+ * Key Types:
+ *   - `ArgType` enum: distinguishes between string and int arguments.
+ *   - `ArgValue`: variant holding either a `std::string` or an `int`.
+ *   - `CommandInfo`: holds argument types and a handler callable.
+ *   - `HandlerFunc`: a std::function taking `va_list` and returning `redisReply*`.
+ *
+ * Usage Example:
+ * --------------
+ * struct AuthCmd
+ * {
+ *   static constexpr const char* format = "AUTH %s";
+ *   using ArgTypes = std::tuple<std::string>;
+ *   static redisReply* call(const std::string& password)
+ *   {
+ *       if (password == "hunter2") {
+ *           isAuth = true;
+ *           return createOkStatusReply();
+ *       }
+ *       return createErrorReply("-ERR invalid password");
+ *   }
+ * };
+ *
+ *
+ *
+ * --- Code ---
+ */
+
+// Deduce ArgType for a C++ type
+template <typename T> static constexpr auto deduceArgType() -> ArgType
+{
+    if constexpr (std::is_same_v<T, std::string>)
+    {
+        return ArgType::String;
+    }
+    else if constexpr (std::is_same_v<T, int>)
+    {
+        return ArgType::Int;
+    }
+    else
+    {
+        static_assert(sizeof(T) == 0, "Unsupported ArgType");
+    }
+}
+
+// Turn a tuple type into a vector<ArgType>
+template <typename Tuple> static auto getArgTypes() -> std::vector<ArgType>
+{
+    constexpr size_t N = std::tuple_size_v<Tuple>;
+    std::vector<ArgType> types;
+    types.reserve(N);
+
+    [&]<std::size_t... I>(std::index_sequence<I...>)
+    { (types.push_back(deduceArgType<std::tuple_element_t<I, Tuple>>()), ...); }(std::make_index_sequence<N>{});
+
+    return types;
+}
+
+// Unpack a parsed ArgValue vector into a tuple
+template <typename Tuple> static auto unpackArgs(const std::vector<ArgValue>& args) -> Tuple
+{
+    return [&]<std::size_t... I>(std::index_sequence<I...>)
+    {
+        return std::make_tuple(std::get<std::tuple_element_t<I, Tuple>>(args[I])...);
+    }(std::make_index_sequence<std::tuple_size_v<Tuple>>{});
+}
+
+// Core generator
+template <typename Tag> static auto makeCommandEntry() -> CommandInfo
+{
+    using Tuple = typename Tag::ArgTypes;
+    auto types = getArgTypes<Tuple>();
+
+    HandlerFunc handler = [types](va_list ap) -> redisReply*
+    {
+        std::vector<ArgValue> args = parseVaList(ap, types);
+        Tuple tup = unpackArgs<Tuple>(args);
+
+        redisReply* reply = std::apply(Tag::call, tup);
+        printResult(reply);
+        return reply;
+    };
+
+    return CommandInfo{types, handler};
+}
+
+
+

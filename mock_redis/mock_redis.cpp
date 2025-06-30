@@ -1,15 +1,17 @@
 ﻿// mock_redis.cpp : Defines the entry point for the application.
 //
-#include <chrono>
 #include <cstdarg>
+#include <cstddef>
+#include <cstdlib>
+#include <cstring>
 #include <functional>
 #include <iostream>
-#include <set>
+#include <string.h>
 #include <string>
 #include <tuple>
 #include <unordered_map>
 #include <unordered_set>
-#include <variant>
+#include <utility>
 #include <vector>
 
 #include "hiredis.h"
@@ -20,20 +22,15 @@
 // In-memory store & auth
 // -------------------
 
-static std::unordered_map<std::string, std::unordered_set<std::string>> setDb;
 
-static bool isAuth = false;
+bool isAuth = false;
 
-
-#include "mock_redis_hash.h"
-#include "mock_redis_misc.h"
-#include "mock_redis_set.h"
-#include "mock_redis_string.h"
 
 // -------------------
 // Parse va_list according to ArgTypes
 // -------------------
 
+//NOLINTBEGIN
 std::vector<ArgValue> parseVaList(va_list ap, const std::vector<ArgType>& argTypes)
 {
     std::vector<ArgValue> result;
@@ -58,7 +55,7 @@ std::vector<ArgValue> parseVaList(va_list ap, const std::vector<ArgType>& argTyp
     }
     return result;
 }
-
+//NOLINTEND
 // Utility: overloaded lambda for std::visit
 template <class... Ts> struct overloaded : Ts...
 {
@@ -68,7 +65,7 @@ template <class... Ts> overloaded(Ts...) -> overloaded<Ts...>;
 
 void printResult(redisReply* reply)
 {
-    if (!reply)
+    if (reply == nullptr)
     {
         std::cout << "-ERR No reply\n";
         return;
@@ -94,109 +91,11 @@ void printResult(redisReply* reply)
     }
 }
 
-
-/*
- * Command Framework for Mock Redis
- * --------------------------------
- *
- * This framework provides a way to define Redis-like commands in C++ using
- * strong typing and variadic argument parsing.
- *
- * Each command is represented by a "Tag" struct that defines:
- *   - A constexpr `format` string showing the command syntax (for debugging/logging).
- *   - A tuple type `ArgTypes` listing the expected argument types.
- *   - A static `call` method implementing the command's logic.
- *
- * The framework automatically:
- *   - Deduces argument types (strings or ints) from the Tag's ArgTypes tuple.
- *   - Parses variadic C-style arguments (`va_list`) to typed C++ arguments.
- *   - Calls the Tag's `call` method with typed arguments.
- *   - Wraps and returns the Redis reply (`redisReply*`).
- *
- * Key Types:
- *   - `ArgType` enum: distinguishes between string and int arguments.
- *   - `ArgValue`: variant holding either a `std::string` or an `int`.
- *   - `CommandInfo`: holds argument types and a handler callable.
- *   - `HandlerFunc`: a std::function taking `va_list` and returning `redisReply*`.
- *
- * Usage Example:
- * --------------
- * struct AuthCmd
- * {
- *   static constexpr const char* format = "AUTH %s";
- *   using ArgTypes = std::tuple<std::string>;
- *   static redisReply* call(const std::string& password)
- *   {
- *       if (password == "hunter2") {
- *           isAuth = true;
- *           return createOkStatusReply();
- *       }
- *       return createErrorReply("-ERR invalid password");
- *   }
- * };
- *
- *
- *
- * --- Code ---
- */
-
-// Deduce ArgType for a C++ type
-template <typename T> constexpr ArgType deduceArgType()
-{
-    if constexpr (std::is_same_v<T, std::string>)
-        return ArgType::String;
-    else if constexpr (std::is_same_v<T, int>)
-        return ArgType::Int;
-    else
-        static_assert(sizeof(T) == 0, "Unsupported ArgType");
-}
-
-// Turn a tuple type into a vector<ArgType>
-template <typename Tuple> std::vector<ArgType> getArgTypes()
-{
-    constexpr size_t N = std::tuple_size_v<Tuple>;
-    std::vector<ArgType> types;
-    types.reserve(N);
-
-    [&]<std::size_t... I>(std::index_sequence<I...>)
-    { (types.push_back(deduceArgType<std::tuple_element_t<I, Tuple>>()), ...); }(std::make_index_sequence<N>{});
-
-    return types;
-}
-
-// Unpack a parsed ArgValue vector into a tuple
-template <typename Tuple> Tuple unpackArgs(const std::vector<ArgValue>& args)
-{
-    return [&]<std::size_t... I>(std::index_sequence<I...>)
-    {
-        return std::make_tuple(std::get<std::tuple_element_t<I, Tuple>>(args[I])...);
-    }(std::make_index_sequence<std::tuple_size_v<Tuple>>{});
-}
-
-// Core generator
-template <typename Tag> CommandInfo makeCommandEntry()
-{
-    using Tuple = typename Tag::ArgTypes;
-    auto types = getArgTypes<Tuple>();
-
-    HandlerFunc handler = [types](va_list ap) -> redisReply*
-    {
-        std::vector<ArgValue> args = parseVaList(ap, types);
-        Tuple tup = unpackArgs<Tuple>(args);
-
-        redisReply* reply = std::apply(Tag::call, tup);
-        printResult(reply);
-        return reply;
-    };
-
-    return CommandInfo{types, handler};
-}
-
 // -------------------
 // Command dispatcher
 // -------------------
 
-redisReply* redisCommand(const std::string name, ...)
+static auto redisCommand(const std::string name, ...) -> redisReply*
 {
 
     auto registry = CommandRegistry::get();
@@ -216,7 +115,7 @@ redisReply* redisCommand(const std::string name, ...)
     va_copy(ap_copy, ap);
     std::cout << name << " ";
     // Print command name and args
-    for (ArgType t : it.argTypes)
+    for (ArgType const t : it.argTypes)
     {
         std::cout << " ";
         switch (t)
@@ -229,7 +128,7 @@ redisReply* redisCommand(const std::string name, ...)
         }
         case ArgType::Int:
         {
-            int i = va_arg(ap_copy, int);
+            int const i = va_arg(ap_copy, int);
             std::cout << i;
             break;
         }
@@ -248,20 +147,20 @@ redisReply* redisCommand(const std::string name, ...)
 // Main function to test
 // -------------------
 
-auto Set(std::string key, std::string value)
+static auto Set(const std::string& key, const std::string& value)
 {
     auto* r = redisCommand("SET %s %s", key.c_str(), value.c_str());
     std::cout << " reply " << r->type << "\n";
 }
 
-auto Get(std::string key)
+static auto Get(const std::string& key)
 {
     auto* r = redisCommand("GET %s", key.c_str());
     std::cout << " reply " << r->type << "\n";
     std::cout << " reply " << r->str << "\n";
 }
 
-int main()
+auto main() -> int
 {
 
     auto& registry = CommandRegistry::get();
@@ -281,11 +180,11 @@ int main()
     return 0;
 }
 
-int test()
+static auto test() -> int
 {
 
     // Sample set up for SMEMBERS
-    setDb["myset"] = {"one", "two", "three"};
+    //setDb["myset"] = {"one", "two", "three"};
 
     // Using the formatted command dispatcher
     auto* r = redisCommand("AUTH %s", "hunter2"); // AUTH hunter2 -> +OK
@@ -323,21 +222,21 @@ int test()
 // Modified create function returning unique_ptr
 auto createRedisReply() -> redisReply*
 {
-    redisReply* reply = (redisReply*)calloc(1, sizeof(redisReply));
+    auto* reply = (redisReply*)calloc(1, sizeof(redisReply));
     std::cerr << "create " << reply << "\n";
     return reply;
 }
 
 // Modified create function returning unique_ptr
-auto createRedisReplyPtr() -> RedisReplyPtr
+static auto createRedisReplyPtr() -> RedisReplyPtr
 {
-    redisReply* rawReply = (redisReply*)calloc(1, sizeof(redisReply));
+    auto* rawReply = (redisReply*)calloc(1, sizeof(redisReply));
     std::cerr << "create " << rawReply << "\n";
 
     return RedisReplyPtr(rawReply, &freeReplyObject);
 }
 
-redisReply* createStatusReply(const char* status)
+auto createStatusReply(const char* status) -> redisReply*
 {
     auto* reply = createRedisReply();
     reply->type = REDIS_REPLY_STATUS;
@@ -346,12 +245,12 @@ redisReply* createStatusReply(const char* status)
     return reply;
 }
 
-redisReply* createOkStatusReply()
+auto createOkStatusReply() -> redisReply*
 {
     return createStatusReply("+OK");
 }
 
-redisReply* createErrorReply(const char* error)
+auto createErrorReply(const char* error) -> redisReply*
 {
     auto* reply = createRedisReply();
     reply->type = REDIS_REPLY_ERROR;
@@ -360,19 +259,19 @@ redisReply* createErrorReply(const char* error)
     return reply;
 }
 
-redisReply* createAuthErrorReply()
+auto createAuthErrorReply() -> redisReply*
 {
     return createErrorReply("-NOAUTH Authentication required");
 }
 
-redisReply* createNilReply()
+auto createNilReply() -> redisReply*
 {
     auto* reply = createRedisReply();
     reply->type = REDIS_REPLY_NIL;
     return reply;
 }
 
-redisReply* createStringReply(const std::string& s)
+auto createStringReply(const std::string& s) -> redisReply*
 {
     auto* reply = createRedisReply();
     reply->type = REDIS_REPLY_STRING;
@@ -381,18 +280,18 @@ redisReply* createStringReply(const std::string& s)
     return reply;
 }
 
-redisReply* createIntegerReply(int value)
+auto createIntegerReply(int value) -> redisReply*
 {
     redisReply* reply = createRedisReply();
     reply->type = REDIS_REPLY_INTEGER;
     reply->integer = value;
     return reply;
 }
-redisReply* createArrayReply(size_t count)
+auto createArrayReply(size_t count) -> redisReply*
 {
-    redisReply* reply = (redisReply*)calloc(1, sizeof(redisReply));
+    auto* reply = createRedisReply();
     reply->type = REDIS_REPLY_ARRAY;
-    reply->elements = static_cast<size_t>(count);
+    reply->elements = count;
     reply->element = (redisReply**)calloc(count, sizeof(redisReply*));
     return reply;
 }
