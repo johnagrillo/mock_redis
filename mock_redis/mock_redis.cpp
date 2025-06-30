@@ -94,17 +94,22 @@ void printResult(redisReply* reply)
 // Command dispatcher
 // -------------------
 
-auto redisCommandFromVaList(const std::string name, va_list ap) -> redisReply*
+auto redisCommandFromVaList(const char* name, va_list ap) -> redisReply*
 {
+    std::cerr << "hello2 " << name << "\n";
     auto& registry = CommandRegistry::get();
     if (!registry.contains(name))
     {
         std::cout << "-ERR unknown command '" << name << "'\n";
         return nullptr;
     }
+    std::vprintf(name, ap);
+    std::cout << "\n";
+    
+
 
     auto& cmdInfo = registry.at(name);
-
+    /*
     // Debugging the arguments passed to the command
     std::cout << name << " ";
     for (ArgType const t : cmdInfo.argTypes)
@@ -134,20 +139,42 @@ auto redisCommandFromVaList(const std::string name, va_list ap) -> redisReply*
         default: std::cout << "?";
         }
     }
-    std::cout << "\n";
-
+    */
     // Call the command's handler function with the original va_list
     redisReply* result = cmdInfo.handler(ap);
+    
     return result;
 }
 
-static auto redisCommand(const std::string name, ...) -> redisReply*
+static auto redisCommand(const char* name, ...) -> redisReply*
 {
+    std::cerr << "hello " << name << "\n";
     va_list ap;
     va_start(ap, name);
-    redisReply* result = redisCommandFromVaList(name, ap);
+    
+
+    va_list ap_copy;
+    va_copy(ap_copy, ap); // Copy ap to ap_copy
+    auto *r = redisCommandFromVaList(name, ap_copy);
+    va_end(ap_copy);
+
     va_end(ap);
-    return result;
+
+
+
+    return r;
+
+    //auto& registry = CommandRegistry::get();
+    //if (!registry.contains(name))
+    //{
+    //    std::cout << "-ERR unknown command '" << name << "'\n";
+    //    return nullptr;
+    //}
+
+    //auto& cmdInfo = registry.at(name);
+    //redisReply* result = cmdInfo.handler(ap);
+    //va_end(ap);
+    //return result;
 }
 
 // -------------------
@@ -164,7 +191,7 @@ static auto Get(const std::string& key)
 {
     auto* r = redisCommand("GET %s", key.c_str());
     std::cout << " reply " << r->type << "\n";
-    std::cout << " reply " << r->str << "\n";
+    //std::cout << " reply " << r->str << "\n";
 }
 
 auto main() -> int
