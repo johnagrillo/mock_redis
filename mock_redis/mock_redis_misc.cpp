@@ -20,7 +20,7 @@ struct AuthCmd : AutoRegister<AuthCmd>
 
     CommandResult operator() (const std::string& password)
     { 
-      AuthCmd::call(password);
+      return AuthCmd::call(password);
     }
 
     static CommandResult call(const std::string& password)

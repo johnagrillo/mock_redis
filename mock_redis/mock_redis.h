@@ -6,8 +6,11 @@
 #include <chrono>
 #include <cstdarg>
 #include <functional>
+#include <hiredis/hiredis.h>
 #include <iostream>
+#include <memory>
 #include <set>
+#include <sstream>
 #include <string>
 #include <tuple>
 #include <unordered_map>
@@ -15,7 +18,6 @@
 #include <variant>
 #include <vector>
 
-#include "hiredis.h"
 extern bool isAuth;
 // -------------------
 // Types and Enums
@@ -35,7 +37,60 @@ enum class ArgType
 };
 using ArgValue = std::variant<std::string, int, BinaryValue>;
 
+inline redisReply* mock(const char* arg1)
+{
+    return nullptr;
+}
 
+inline redisReply* mock(const char* format, const char* arg1)
+{
+    return nullptr;
+}
+
+inline redisReply* mock(const char* format, const char* arg1, const char* areg2)
+{
+    return nullptr;
+}
+
+inline redisReply* mock(const char* format, const char* arg1, int arg2, const char* arg3)
+{
+    return nullptr;
+}
+
+inline redisReply* mock(const char* format, const char* arg1, const char* arg2, const char* arg3)
+{
+    return nullptr;
+}
+
+// Variadic mock redisCommand wrapper
+template <typename... Args> inline redisReply* redisCommandT(void* context, const char* format, Args&&... args)
+{
+    std::ostringstream oss;
+    oss << "[MOCK redisCommand called]\n";
+
+    // Log all arguments
+    (void)std::initializer_list<int>{(oss << "Arg: " << args << "\n", 0)...};
+    std::cout << oss.str();
+
+    redisReply* reply = nullptr;
+
+    if constexpr (sizeof...(args) == 1)
+    {
+        reply = mock(const_cast<char*>(format), std::forward<Args>(args)...);
+    }
+    else if constexpr (sizeof...(args) == 2)
+    {
+        reply = mock(const_cast<char*>(format), std::forward<Args>(args)...);
+    }
+    else
+    {
+        reply = mock(const_cast<char*>(format), std::forward<Args>(args)...);
+    }
+
+    return reply;
+}
+
+// auto redisCommand(const char* name, ...) -> redisReply*;
 
 static std::string argTypeName(ArgType t)
 {
@@ -58,7 +113,8 @@ struct CommandInfo
     std::vector<ArgType> argTypes;
     HandlerFunc handler;
 };
-
+// Forward declare makeCommandEntry before CommandRegistrar uses it
+template <typename Tag> static auto makeCommandEntry() -> CommandInfo;
 // Global command registry singleton
 struct CommandRegistry
 {
@@ -88,7 +144,6 @@ template <typename Tag> struct AutoRegister
 // TODO: Reference additional headers your program requires here.
 redisReply* createRedisReply();
 
-
 // Alias for unique_ptr with custom deleter
 using RedisReplyPtr = std::unique_ptr<redisReply, decltype(&freeReplyObject)>;
 
@@ -103,7 +158,6 @@ redisReply* createArrayReply(size_t count);
 
 std::vector<ArgValue> parseVaList(va_list ap, const std::vector<ArgType>& argTypes);
 void printResult(redisReply* reply);
-
 
 /*
  * Command Framework for Mock Redis
@@ -162,7 +216,6 @@ template <typename T> static constexpr auto deduceArgType() -> ArgType
         static_assert(sizeof(T) == 0, "Unsupported ArgType");
 }
 
-
 // Turn a tuple type into a vector<ArgType>
 template <typename Tuple> static auto getArgTypes() -> std::vector<ArgType>
 {
@@ -203,6 +256,3 @@ template <typename Tag> static auto makeCommandEntry() -> CommandInfo
 
     return CommandInfo{types, handler};
 }
-
-
-

@@ -26,6 +26,7 @@ struct SetBinaryCmd : AutoRegister<SetBinaryCmd>
 
         return createOkStatusReply();
     }
+
 };
 
 

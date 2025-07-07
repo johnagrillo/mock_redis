@@ -180,7 +180,7 @@ struct LLenCmd
     static constexpr const char* tag = "LLEN";
     static constexpr const char* format = "LLEN %s";
     using ArgTypes = std::tuple<std::string>;
-
+    
     static CommandResult call(const std::string& key)
     {
         if (!isAuth) return createAuthErrorReply();
@@ -197,5 +197,7 @@ struct LLenCmd
         return createIntegerReply(static_cast<int>(list.size()));
     }
 
-    static inline CommandRegistrar<LLenCmd> registrar{};
+
+    
+    CommandRegistrar<LLenCmd> registrar{};
 };
