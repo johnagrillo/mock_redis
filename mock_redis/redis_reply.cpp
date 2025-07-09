@@ -1,4 +1,4 @@
-#include "mock_redis_reply.h"
+#include "redis_reply.h"
 
 #include <cstring>
 #include <memory>

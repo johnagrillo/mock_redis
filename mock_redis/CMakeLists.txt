@@ -10,7 +10,7 @@ add_library(mock_redis STATIC
     mock_redis_string.cpp
     mock_redis_set.cpp
     mock_redis_list.cpp
-    mock_redis_reply.cpp
+    "redis_reply.cpp"
     
 )
 
@@ -35,3 +35,7 @@ set_property(TARGET test01 PROPERTY CXX_STANDARD_REQUIRED ON)
 
 # Link test1 executable to mock_redis library if needed
 target_link_libraries(test01 PRIVATE hiredis::hiredis mock_redis PRIVATE GTest::gtest GTest::gtest_main GTest::gmock GTest::gmock_main)
+
+add_executable(client client.cpp)
+set_property(TARGET client PROPERTY CXX_STANDARD 20)
+set_property(TARGET client PROPERTY CXX_STANDARD_REQUIRED ON)
