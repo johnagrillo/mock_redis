@@ -1,5 +1,12 @@
 #pragma once
 
+// Utility for std::visit
+template <class... Ts> struct overloaded : Ts...
+{
+    using Ts::operator()...;
+};
+template <class... Ts> overloaded(Ts...) -> overloaded<Ts...>;
+
 #include <iostream>
 #include <map>
 #include <memory>
@@ -88,6 +95,7 @@ struct MapTag
 {
 };
 
+
 // Type aliases with unique tags
 using Array = ContainerHolder<std::vector<Reply>, ArrayTag>;
 using Set = ContainerHolder<std::vector<Reply>, SetTag>;
@@ -132,94 +140,57 @@ struct Reply
     {
         return std::tie(type, value, vtype) < std::tie(other.type, other.value, other.vtype);
     }
-    static void printReply(const redis::Reply& reply)
+
+    // Pretty print with nesting
+    static void printReply(const Reply& reply, int indent = 0)
     {
-        using std::cout;
-        using std::endl;
-
-        switch (reply.type)
-        {
-        case redis::Type::String:
-        case redis::Type::Status:
-        case redis::Type::Error:
-            if (std::holds_alternative<std::monostate>(reply.value))
-            {
-                cout << "String/Status/Error: (nil)" << endl;
-            }
-            else
-            {
-                cout << "String/Status/Error: " << std::get<std::string>(reply.value) << endl;
-            }
-            break;
-
-        case redis::Type::Integer: cout << "Integer: " << std::get<long long>(reply.value) << endl; break;
-
-        case redis::Type::Double: cout << "Double: " << std::get<double>(reply.value) << endl; break;
-
-        //case redis::Type::Boolean:
-        //    cout << "Boolean: " << (std::get<bool>(reply.value) ? "true" : "false") << endl;
-        //    break;
-
-        case redis::Type::Array:
-        {
-            const redis::Array& arr = std::get<redis::Array>(reply.value);
-            if (arr.empty())
-            {
-                cout << "Array: []" << endl;
-            }
-            else
-            {
-                cout << "Array:" << endl;
-                for (size_t i = 0; i < arr.size(); ++i)
-                {
-                    cout << "  [" << i << "]: ";
-                    printReply(arr[i]); // recursive print
-                }
-            }
-            break;
-        }
-
-        case redis::Type::Map:
-        {
-            const redis::Map& map = std::get<redis::Map>(reply.value);
-            cout << "Map:" << endl;
-            for (const auto& [key, val] : map)
-            {
-                cout << "  Key: ";
-                printReply(key);
-                cout << "  Value: ";
-                printReply(val);
-            }
-            break;
-        }
-
-        case redis::Type::Set:
-        {
-            const redis::Set& set = std::get<redis::Set>(reply.value);
-            cout << "Set:" << endl;
-            for (const auto& elem : set)
-            {
-                cout << "  ";
-                printReply(elem);
-            }
-            break;
-        }
-
-        case redis::Type::Push:
-        {
-            const redis::Push& push = std::get<redis::Push>(reply.value);
-            cout << "Push:" << endl;
-            for (size_t i = 0; i < push.size(); ++i)
-            {
-                cout << "  [" << i << "]: ";
-                printReply(push[i]);
-            }
-            break;
-        }
-
-        case redis::Type::Nil:
-        default: cout << "(nil)" << endl; break;
-        }
+        std::string indentStr(indent, ' ');
+        std::visit(overloaded{[&](const std::string& s) { std::cout << indentStr << "\"" << s << "\"\n"; },
+                              [&](long long i) { std::cout << indentStr << i << "\n"; },
+                              [&](double d) { std::cout << indentStr << d << "\n"; },
+                              [&](bool b) { std::cout << indentStr << (b ? "true" : "false") << "\n"; },
+                              [&](const std::monostate&) { std::cout << indentStr << "(nil)\n"; },
+                              [&](const Array& arr)
+                              {
+                                  std::cout << indentStr << "[\n";
+                                  for (const auto& item : arr.data)
+                                  {
+                                      printReply(item, indent + 2);
+                                  }
+                                  std::cout << indentStr << "]\n";
+                              },
+                              [&](const Set& set)
+                              {
+                                  std::cout << indentStr << "{set:\n";
+                                  for (const auto& item : set.data)
+                                  {
+                                      printReply(item, indent + 2);
+                                  }
+                                  std::cout << indentStr << "}\n";
+                              },
+                              [&](const Push& push)
+                              {
+                                  std::cout << indentStr << "{push:\n";
+                                  for (const auto& item : push.data)
+                                  {
+                                      printReply(item, indent + 2);
+                                  }
+                                  std::cout << indentStr << "}\n";
+                              },
+                              [&](const Map& map)
+                              {
+                                  std::cout << indentStr << "{\n";
+                                  for (const auto& [key, val] : map.data)
+                                  {
+                                      std::cout << indentStr << "  ";
+                                      printReply(key, 0);
+                                      std::cout << indentStr << "  => ";
+                                      printReply(val, 0);
+                                  }
+                                  std::cout << indentStr << "}\n";
+                              },
+                              [](const auto&) { std::cout << "(unknown type)\n"; }},
+                   reply.value);
     }
 };
 
